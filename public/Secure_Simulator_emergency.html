@@ -1,0 +1,697 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Floor plan evacuation twin</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@400;600;800&display=swap">
+<style>
+:root{color-scheme:dark;--bg:#0c121b;--panel:rgba(14,21,33,.86);--ink:#e8edf4;--mute:#8b98ab;--fire:#ff7a1a;--ok:#3ddc97;--bad:#ff4d5e;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+html,body{height:100%;margin:0;background:var(--bg);color:var(--ink);font-family:'Bricolage Grotesque',system-ui,sans-serif;overflow:hidden}
+canvas{display:block;touch-action:none}
+.hud{position:absolute;left:12px;top:calc(12px + env(safe-area-inset-top,0px));width:310px;max-width:calc(100vw - 24px);max-height:calc(100% - 100px - env(safe-area-inset-top,0px));overflow:auto;box-sizing:border-box;background:var(--panel);backdrop-filter:blur(8px);border:1px solid rgba(255,255,255,.1);border-radius:14px;padding:14px 16px}
+h1{margin:0 0 8px;font-size:20px;font-weight:800;letter-spacing:-.01em}
+label{display:block;font-size:12px;color:var(--mute);margin:10px 0 2px}
+input[type=range],select{width:100%}
+select{background:#0c121b;color:var(--ink);border:1px solid rgba(255,255,255,.2);border-radius:8px;padding:6px;font:inherit}
+button,.btn{font:inherit;font-weight:600;font-size:14px;color:#fff;background:var(--fire);border:0;border-radius:999px;padding:9px 18px;cursor:pointer;display:inline-block;margin:0 6px 6px 0}
+button.ghost,.btn.ghost{background:var(--panel);border:1px solid rgba(255,255,255,.25)}
+button.on{background:var(--ok);color:#08301f}
+button:focus-visible,.btn:focus-within{outline:2px solid #fff;outline-offset:2px}
+#info{font-size:13px;line-height:1.4;color:var(--mute)}#info.err{color:var(--bad)}
+.stats{display:grid;grid-template-columns:repeat(5,1fr);gap:4px 8px;margin:12px 0 0}
+.stats b{display:block;font-size:22px;font-weight:800;line-height:1}
+.stats span{font-size:10.5px;color:var(--mute)}
+#status{margin-top:10px;font-size:13px;color:var(--fire)}
+details{margin-top:10px;border-top:1px solid rgba(255,255,255,.1);padding-top:8px}
+summary{cursor:pointer;font-size:13px;font-weight:600}
+#layers{max-height:150px;overflow:auto;border:1px solid rgba(255,255,255,.12);border-radius:8px;padding:4px 8px}
+#layers label{display:flex;gap:6px;align-items:center;margin:3px 0;color:var(--ink);font-size:13px}
+label.chk{display:flex;gap:8px;align-items:center;color:var(--ink);font-size:13px;margin:8px 0}
+#layers span{color:var(--mute);margin-left:auto}
+.bar{position:absolute;left:0;right:0;bottom:calc(14px + env(safe-area-inset-bottom,0px));display:flex;flex-wrap:wrap;gap:10px;justify-content:center;align-items:center;padding:0 12px}
+.bar button{margin:0;padding:11px 22px;font-size:15px}
+.hint{width:100%;text-align:center;font-size:12px;color:var(--mute)}
+
+.rhud{left:auto;right:12px;width:290px}
+.types{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.type{margin:0;border-radius:12px;background:var(--panel);border:1px solid rgba(255,255,255,.25);padding:10px 8px;font-size:13px;line-height:1.2}
+.type.sel{background:var(--fire);border-color:var(--fire)}
+.desc{font-size:12.5px;line-height:1.45;color:var(--mute);margin-top:10px;min-height:54px}
+.hintline{font-size:12px;color:var(--mute);margin:2px 0 6px}
+.stats.two{grid-template-columns:repeat(2,1fr)}
+.lg{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--mute);margin-top:6px}
+.lg i{width:12px;height:12px;border-radius:50%;display:inline-block}
+#rList div{font-size:13px;padding:5px 0;border-bottom:1px solid rgba(255,255,255,.08)}
+</style>
+</head>
+<body>
+<div class="hud">
+  <h1>Floor plan evacuation twin</h1>
+  <div>
+    <label class="btn" for="file" style="margin-top:0;color:#fff">Choose floor plan</label><input id="file" type="file" accept=".dxf,.dwg,.geojson,.json" hidden>
+    <button id="sample" class="ghost">Try sample</button>
+  </div>
+  <div id="info">Choose a DXF, GeoJSON or JSON file, or try the sample.</div>
+  <div class="stats">
+    <div><b id="sSafe">0</b><span>Evacuated</span></div>
+    <div><b id="sDead">0</b><span>Casualties</span></div>
+    <div><b id="sExit">0</b><span>Exits open</span></div>
+    <div><b id="sWall">0</b><span>Walls down</span></div>
+    <div><b id="sFire">0</b><span>Flames</span></div>
+  </div>
+  <div id="status"></div>
+  <details open>
+    <summary>Crowd</summary>
+    <label>Character size: <span id="szv">1.0</span>x</label>
+    <input id="sz" type="range" min=".5" max="2.5" step=".1" value="1">
+    <label>Walking speed: <span id="spv">1.0</span>x</label>
+    <input id="spd" type="range" min=".3" max="3" step=".1" value="1">
+    <label>Panic level: <span id="pav">0.8</span></label>
+    <input id="pa" type="range" min="0" max="1" step=".05" value=".8">
+    <label for="pn">People to add (also used by Place crowd)</label>
+    <div style="display:flex;gap:8px;align-items:center"><input id="pn" type="number" min="1" max="200" value="10" style="width:80px;background:#0c121b;color:var(--ink);border:1px solid rgba(255,255,255,.2);border-radius:8px;padding:6px;font:inherit"><button id="bAdd" class="ghost" style="margin:0">Add people</button></div>
+  </details>
+  <details>
+    <summary>Plan settings</summary>
+    <label>Layers (tick the ones that hold walls)</label>
+    <div id="layers"></div>
+    <button id="all" class="ghost" style="margin-top:6px">All</button><button id="none" class="ghost">None</button>
+    <label class="chk"><input type="checkbox" id="showC" checked> Show room and door colors</label>
+    <label class="chk"><input type="checkbox" id="showL" checked> Show labels</label>
+    <label>Drawing units</label>
+    <select id="units"><option value="auto">Auto detect</option><option value="0.001">Millimeters</option><option value="0.01">Centimeters</option><option value="1">Meters</option><option value="0.0254">Inches</option><option value="0.3048">Feet</option></select>
+    <label>Wall height: <span id="hv">3.0</span> m</label>
+    <input id="h" type="range" min="1" max="8" step=".1" value="3">
+    <label>Wall thickness: <span id="tv">0.30</span> m</label>
+    <input id="t" type="range" min=".1" max=".8" step=".05" value=".3">
+  </details>
+</div>
+<div class="hud rhud">
+  <h1>Emergency</h1>
+  <label>Type</label>
+  <div class="types" id="types">
+    <button class="type sel" data-t="fire">Fire</button>
+    <button class="type" data-t="hazard">Fire hazard</button>
+    <button class="type" data-t="struct">Structural damage</button>
+    <button class="type" data-t="equip">Equipment failure</button>
+  </div>
+  <div id="tdesc" class="desc"></div>
+  <button id="rStart" style="width:100%;margin:6px 0 4px">Start emergency</button>
+  <div class="hintline">Starts at a random place. Tap the floor to choose the place yourself.</div>
+  <details open>
+    <summary>Awareness</summary>
+    <div class="stats two">
+      <div><b id="rAw">0</b><span>Aware, running</span></div>
+      <div><b id="rCalm">0</b><span>Not aware yet</span></div>
+    </div>
+    <label>People shout to others within: <span id="shv">3.0</span> m</label>
+    <input id="shout" type="range" min="1" max="8" step=".5" value="3">
+    <button id="rAlarm" class="ghost" style="margin-top:10px">Sound alarm</button>
+    <div class="lg"><i style="background:#5bc0ff"></i>Calm, walking around</div>
+    <div class="lg"><i style="background:#ffb020"></i>Aware, running to an exit</div>
+  </details>
+  <details open>
+    <summary>Active emergencies</summary>
+    <div id="rList">None yet</div>
+  </details>
+</div>
+<div class="bar">
+  <button id="bExit" class="ghost">Add exit</button>
+  <button id="bCrowd" class="ghost">Place crowd</button>
+  <button id="bReset" class="ghost">Reset</button>
+  <div class="hint">Pick an emergency on the right, then press Start or tap the floor. Drag to rotate, scroll or pinch to zoom.</div>
+</div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+const T=THREE,$=id=>document.getElementById(id),clamp=(v,a,b)=>Math.min(b,Math.max(a,v));
+const info=(m,e)=>{$('info').textContent=m;$('info').className=e?'err':''};
+window.onerror=m=>info('Error: '+m,1);
+
+/* ---------- file parsing (DXF, GeoJSON, JSON) ---------- */
+function parseDXF(txt){
+  if(/^AutoCAD Binary DXF/.test(txt))throw new Error('This is a binary DXF. Save it as an ASCII DXF.');
+  if(/^AC1[0-9]{3}/.test(txt))throw new Error('This is a DWG file, which a web page cannot read. Convert it to ASCII DXF with the free ODA File Converter, then load the DXF here.');
+  const A=txt.split(/\r?\n/),P=[];
+  for(let i=0;i+1<A.length;i+=2)P.push([parseInt(A[i],10),A[i+1].trim()]);
+  let units=0,i=0,s=-1;
+  for(;i<P.length-1;i++)if(P[i][0]===9&&P[i][1]==='$INSUNITS'){units=parseInt(P[i+1][1],10)||0;break}
+  for(i=0;i<P.length-1;i++)if(P[i][0]===0&&P[i][1]==='SECTION'&&P[i+1][0]===2&&P[i+1][1]==='ENTITIES'){s=i+2;break}
+  if(s<0)throw new Error('No ENTITIES section found. Is this a DXF file?');
+  const ents=[];let cur=null;
+  for(i=s;i<P.length;i++){const[c,v]=P[i];if(c===0){if(v==='ENDSEC')break;cur={t:v,d:[]};ents.push(cur)}else if(cur)cur.d.push([c,v])}
+  const lc={},shapes=[],texts=[];
+  for(let k=0;k<P.length;k++)if(P[k][0]===0&&P[k][1]==='LAYER'){let nm=null,col=null;for(let j=k+1;j<P.length&&P[j][0]!==0;j++){if(P[j][0]===2)nm=P[j][1];else if(P[j][0]===420)col=parseInt(P[j][1],10)}if(nm&&col!==null)lc[nm]=col}
+  const segs=[],ly=new Map();
+  const add=(x1,y1,x2,y2,l)=>{if(![x1,y1,x2,y2].every(isFinite)||(x1===x2&&y1===y2))return;segs.push([x1,y1,x2,y2,l]);ly.set(l,(ly.get(l)||0)+1)};
+  const poly=(p,closed,l)=>{for(let k=0;k<p.length-1;k++)add(p[k][0],p[k][1],p[k+1][0],p[k+1][1],l);if(closed&&p.length>2)add(p[p.length-1][0],p[p.length-1][1],p[0][0],p[0][1],l)};
+  let pl=null;
+  for(const e of ents){
+    const gv=c=>{const f=e.d.find(p=>p[0]===c);return f?f[1]:null},layer=gv(8)||'0';
+    if(e.t==='LINE')add(+gv(10),+gv(20),+gv(11),+gv(21),layer);
+    else if(e.t==='LWPOLYLINE'){const pts=[];let x=null;for(const[c,v]of e.d){if(c===10)x=+v;else if(c===20&&x!==null){pts.push([x,+v]);x=null}}const cl=(parseInt(gv(70)||'0',10)&1)===1;poly(pts,cl,layer);if(cl&&pts.length>2)shapes.push({layer,pts})}
+    else if(e.t==='TEXT'||e.t==='MTEXT'){const tx=gv(1);if(tx)texts.push({layer,x:+gv(10),y:+gv(20),h:+gv(40)||1,text:tx.replace(/\\P/g,' ').replace(/[{}]/g,'')})}
+    else if(e.t==='POLYLINE')pl={pts:[],closed:(parseInt(gv(70)||'0',10)&1)===1,layer};
+    else if(e.t==='VERTEX'&&pl)pl.pts.push([+gv(10),+gv(20)]);
+    else if(e.t==='SEQEND'&&pl){poly(pl.pts,pl.closed,pl.layer);pl=null}
+  }
+  return{segs,ly,units,shapes,texts,lc};
+}
+function parseJSONFile(txt){
+  let j;try{j=JSON.parse(txt)}catch(e){throw new Error('This is not valid JSON or GeoJSON text.')}
+  const segs=[],ly=new Map();
+  const add=(x1,y1,x2,y2,l)=>{if(![x1,y1,x2,y2].every(isFinite)||(x1===x2&&y1===y2))return;segs.push([x1,y1,x2,y2,l]);ly.set(l,(ly.get(l)||0)+1)};
+  if(j&&Array.isArray(j.floors)){
+    let hh=0,tt=0;
+    for(const f of j.floors){
+      for(const w of(f.walls||[])){add(+w.x1,-w.y1,+w.x2,-w.y2,String(f.name||'floor'));if(!tt&&w.thickness)tt=w.thickness}
+      if(!hh&&f.defaultWallHeight)hh=f.defaultWallHeight;
+    }
+    return{segs,ly,units:4,height:hh?hh/1000:0,thick:tt?tt/1000:0};
+  }
+  const wl=Array.isArray(j)?j:(j&&Array.isArray(j.walls)?j.walls:null);
+  if(wl){
+    for(const w of wl){const a=Array.isArray(w)?w:[w.x1,w.y1!==undefined?w.y1:w.z1,w.x2,w.y2!==undefined?w.y2:w.z2];add(+a[0],-a[1],+a[2],-a[3],'walls')}
+    return{segs,ly,units:6};
+  }
+  (function walk(o,l){
+    if(!o)return;
+    if(o.type==='FeatureCollection')return o.features.forEach(f=>walk(f,l));
+    if(o.type==='Feature'){const p=o.properties||{};return walk(o.geometry,String(p.layer||p.Layer||p.LAYER||p.type||l))}
+    if(o.type==='GeometryCollection')return o.geometries.forEach(x=>walk(x,l));
+    const rg=p=>{for(let i=0;i<p.length-1;i++)add(p[i][0],p[i][1],p[i+1][0],p[i+1][1],l)};
+    if(o.type==='LineString')rg(o.coordinates);
+    else if(o.type==='MultiLineString'||o.type==='Polygon')o.coordinates.forEach(rg);
+    else if(o.type==='MultiPolygon')o.coordinates.forEach(p=>p.forEach(rg));
+  })(j,'geometry');
+  if(segs.length){
+    let x0=1e18,x1=-1e18,y0=1e18,y1=-1e18;
+    for(const s of segs)for(let k=0;k<4;k+=2){x0=Math.min(x0,s[k]);x1=Math.max(x1,s[k]);y0=Math.min(y0,s[k+1]);y1=Math.max(y1,s[k+1])}
+    if(Math.abs(x0)<=180&&Math.abs(x1)<=180&&Math.abs(y0)<=90&&Math.abs(y1)<=90&&(x1-x0)<1&&(y1-y0)<1){
+      const kx=111320*Math.cos((y0+y1)/2*Math.PI/180),ky=110540;
+      for(const s of segs){s[0]=(s[0]-x0)*kx;s[2]=(s[2]-x0)*kx;s[1]=(s[1]-y0)*ky;s[3]=(s[3]-y0)*ky}
+    }
+  }
+  return{segs,ly,units:6};
+}
+const parseAny=txt=>{const t=txt.replace(/^\uFEFF/,'').trimStart();return(t[0]==='{'||t[0]==='[')?parseJSONFile(t):parseDXF(txt)};
+
+/* ---------- plan state ---------- */
+const C=.5;
+let rawShapes=[],rawTexts=[],lcols={},SHAPES=[],TEXTS=[],deco=[],labelObjs=[],raw=[],layers=new Map(),hdrUnits=0,name='',SEGS=[],SW=30,SD=18,ext=30,GX=60,GZ=36,TH=.3;
+let walls=[],exits=[],exitObjs=[],userEx=[],fires=[],smoke=[],people=[],wallBlock=new Uint8Array(1),dist=new Int16Array(1),dirty=true,exitMode=false;
+let clock=0,hazards=[],soot=[],brk=0,curType='fire',flashMsg='',flashT=0,awT=0,sootT=0,lastSig='';
+
+function load(txt,label){
+  try{
+    const p=parseAny(txt);
+    if(!p.segs.length){info('No walls found. DXF needs lines or polylines, GeoJSON needs lines or polygons, and JSON needs a walls list.',1);return}
+    raw=p.segs;rawShapes=p.shapes||[];rawTexts=p.texts||[];lcols=p.lc||{};hdrUnits=p.units;name=label;userEx=[];
+    if(p.height)$('h').value=clamp(p.height,1,8);
+    if(p.thick)$('t').value=clamp(p.thick,.1,.8);
+    sl();
+    layers=new Map([...p.ly.entries()].sort((a,b)=>b[1]-a[1]).map(([k,n])=>[k,{n,on:true}]));
+    const wl=[...layers.keys()].filter(k=>/wall|mur|wand|a-wall/i.test(k));
+    if(wl.length)for(const[k,v]of layers)v.on=wl.includes(k);
+    drawLayerList();rebuild(true);
+  }catch(e){info(e.message,1)}
+}
+function drawLayerList(){
+  const box=$('layers');box.innerHTML='';
+  for(const[k,v]of layers){
+    const l=document.createElement('label'),c=document.createElement('input'),t=document.createElement('span');
+    c.type='checkbox';c.checked=v.on;c.onchange=()=>{v.on=c.checked;rebuild(true)};
+    t.textContent=v.n;l.append(c,document.createTextNode(k),t);box.append(l);
+  }
+}
+function rebuild(fit){
+  let sel=raw.filter(s=>layers.get(s[4]).on),warn='';
+  if(sel.length>800){sel=sel.slice(0,800);warn=' Showing the first 800 lines. Untick layers that are not walls.'}
+  if(!sel.length){SEGS=[];clearAll();info(name+': no layers selected.');return}
+  let x0=1e18,x1=-1e18,y0=1e18,y1=-1e18;
+  for(const s of sel)for(let k=0;k<4;k+=2){x0=Math.min(x0,s[k]);x1=Math.max(x1,s[k]);y0=Math.min(y0,s[k+1]);y1=Math.max(y1,s[k+1])}
+  let f=$('units').value,note='';
+  if(f==='auto'){
+    const m={1:.0254,2:.3048,4:.001,5:.01,6:1}[hdrUnits],e=Math.max(x1-x0,y1-y0);
+    f=m||(e>8000?.001:e>800?.01:1);note=' (units auto: '+({.001:'mm',.01:'cm',1:'m',.0254:'in',.3048:'ft'}[f])+')';
+  }else f=+f;
+  SEGS=sel.map(s=>[(s[0]-x0)*f,(y1-s[1])*f,(s[2]-x0)*f,(y1-s[3])*f]);
+  SHAPES=rawShapes.map(r=>({layer:r.layer,pts:r.pts.map(q=>[(q[0]-x0)*f,(y1-q[1])*f])}));
+  TEXTS=rawTexts.map(r=>({text:r.text,x:(r.x-x0)*f,z:(y1-r.y)*f,h:r.h*f}));
+  SW=Math.max((x1-x0)*f,1);SD=Math.max((y1-y0)*f,1);ext=Math.max(SW,SD);
+  info(name+': '+sel.length+' wall lines, '+SW.toFixed(1)+' x '+SD.toFixed(1)+' m'+note+'.'+warn,sel.length>=800);
+  build(fit);
+}
+$('showC').onchange=()=>SEGS.length&&build(false);
+$('showL').onchange=()=>labelObjs.forEach(o=>o.visible=$('showL').checked);
+$('units').onchange=()=>raw.length&&rebuild(true);
+$('all').onclick=()=>{layers.forEach(v=>v.on=true);drawLayerList();rebuild(true)};
+$('none').onclick=()=>{layers.forEach(v=>v.on=false);drawLayerList();rebuild(true)};
+const sl=()=>{$('hv').textContent=(+$('h').value).toFixed(1);$('tv').textContent=(+$('t').value).toFixed(2)};
+$('h').oninput=$('t').oninput=sl;
+$('h').onchange=$('t').onchange=()=>SEGS.length&&build(false);
+function readFile(f){const fr=new FileReader();fr.onload=()=>load(fr.result,f.name);fr.onerror=()=>info('Could not open that file.',1);fr.readAsText(f)}
+$('file').onchange=e=>{if(e.target.files[0])readFile(e.target.files[0])};
+addEventListener('dragover',e=>e.preventDefault());
+addEventListener('drop',e=>{e.preventDefault();if(e.dataTransfer.files[0])readFile(e.dataTransfer.files[0])});
+$('sample').onclick=()=>{
+  const o=[],L=(l,a,b,c,d)=>o.push('0','LINE','8',l,'10',a,'20',b,'11',c,'21',d);
+  o.push('0','SECTION','2','HEADER','9','$INSUNITS','70','6','0','ENDSEC','0','SECTION','2','ENTITIES');
+  [[0,0,13,0],[17,0,30,0],[0,18,30,18],[0,0,0,7],[0,11,0,18],[30,0,30,7],[30,11,30,18],[10,0,10,5],[10,8,10,13],[10,16,10,18],[20,0,20,5],[20,8,20,13],[20,16,20,18],[10,9,14,9],[16,9,20,9]].forEach(a=>L('A-WALL',...a));
+  [[2,2,4,2],[4,2,4,3],[4,3,2,3],[2,3,2,2],[22,14,26,14],[26,14,26,16],[26,16,22,16],[22,16,22,14]].forEach(a=>L('FURNITURE',...a));
+  [['ROOM_HALL',0,0,10,18,'Entrance hall'],['ROOM_SHOP',10,0,20,18,'Shop'],['ROOM_CAFE',20,0,30,18,'Cafe']].forEach(r=>{
+    o.push('0','LWPOLYLINE','8',r[0],'90','4','70','1','10',r[1]+.3,'20',.3,'10',r[3]-.3,'20',.3,'10',r[3]-.3,'20',17.7,'10',r[1]+.3,'20',17.7);
+    o.push('0','TEXT','8','LABELS','10',(r[1]+r[3])/2,'20',9,'40',1,'1',r[5])});
+  o.push('0','ENDSEC','0','EOF');
+  load(o.join('\n'),'Sample DXF');
+};
+
+/* ---------- three.js scene ---------- */
+const scene=new T.Scene();scene.background=new T.Color(0x0c121b);scene.fog=new T.Fog(0x0c121b,45,100);
+const cam=new T.PerspectiveCamera(50,1,.1,2000);
+const ren=new T.WebGLRenderer({antialias:true});ren.setPixelRatio(Math.min(devicePixelRatio,2));ren.shadowMap.enabled=true;
+document.body.prepend(ren.domElement);
+scene.add(new T.HemisphereLight(0xa9c0e6,0x2a3550,1.0));
+const sun=new T.DirectionalLight(0xdfe8ff,1.0);sun.castShadow=true;sun.shadow.mapSize.set(2048,2048);scene.add(sun,sun.target);
+const ground=new T.Mesh(new T.PlaneGeometry(1,1),new T.MeshStandardMaterial({color:0x0f1620}));
+ground.rotation.x=-Math.PI/2;ground.receiveShadow=true;scene.add(ground);
+const floor=new T.Mesh(new T.BoxGeometry(1,.2,1),new T.MeshStandardMaterial({color:0x2b394f,roughness:.9}));
+floor.receiveShadow=true;scene.add(floor);
+const base=new T.Color(0xd5dbe5),char=new T.Color(0x2a2523);
+
+const ec=document.createElement('canvas');ec.width=256;ec.height=96;
+{const g=ec.getContext('2d');g.fillStyle='#3ddc97';g.fillRect(0,0,256,96);g.fillStyle='#08301f';g.font='800 60px sans-serif';g.textAlign='center';g.fillText('EXIT',128,70)}
+const exitTex=new T.CanvasTexture(ec);
+function addExit(x,z,r){
+  const pad=new T.Mesh(new T.CylinderGeometry(r,r,.05,32),new T.MeshBasicMaterial({color:0x3ddc97,transparent:true,opacity:.6}));
+  pad.position.set(x,.05,z);
+  const sp=new T.Sprite(new T.SpriteMaterial({map:exitTex}));sp.scale.set(2,.75,1);sp.position.set(x,+$('h').value+.6,z);
+  scene.add(pad,sp);exitObjs.push(pad,sp);exits.push({x,z,r,pad,blocked:false});
+}
+const cell=(x,z)=>[clamp(Math.floor(x/C),0,GX-1),clamp(Math.floor(z/C),0,GZ-1)];
+const wb=(x,z)=>{const[a,b]=cell(x,z);return wallBlock[b*GX+a]};
+function rebuildWalls(){
+  wallBlock.fill(0);const hf=TH/2+.1;
+  for(const w of walls){if(w.fallen)continue;
+    const[x1,z1,x2,z2]=w.s,dx=(x2-x1)/w.L,dz=(z2-z1)/w.L;
+    for(let s=-hf;s<=w.L+hf;s+=.2)for(let o=-hf;o<=hf+.01;o+=.15){
+      const[a,b]=cell(x1+dx*s-dz*o,z1+dz*s+dx*o);wallBlock[b*GX+a]=1}}
+  for(const h of hazards){if(!h.block)continue;const n=Math.ceil(h.block/C)+1,[a,b]=cell(h.x,h.z);
+    for(let dx=-n;dx<=n;dx++)for(let dz=-n;dz<=n;dz++){const x=a+dx,z=b+dz;if(x<0||z<0||x>=GX||z>=GZ)continue;
+      if(Math.hypot((x+.5)*C-h.x,(z+.5)*C-h.z)<=h.block)wallBlock[z*GX+x]=1}}
+}
+const runs=(n,free)=>{const o=[];let a=-1;for(let i=0;i<=n;i++){const f=i<n&&free(i);if(f&&a<0)a=i;if(!f&&a>=0){if(a>0&&i<n&&i-a>=3)o.push([a,i]);a=-1}}return o};
+function detectExits(){
+  const R=(a,b)=>Math.max(1.1,(b-a)*C/2);
+  for(const[a,b]of runs(GX,i=>!wallBlock[i]))addExit((a+b)/2*C,0,R(a,b));
+  for(const[a,b]of runs(GX,i=>!wallBlock[(GZ-1)*GX+i]))addExit((a+b)/2*C,SD,R(a,b));
+  for(const[a,b]of runs(GZ,i=>!wallBlock[i*GX]))addExit(0,(a+b)/2*C,R(a,b));
+  for(const[a,b]of runs(GZ,i=>!wallBlock[i*GX+GX-1]))addExit(SW,(a+b)/2*C,R(a,b));
+  for(const u of userEx)addExit(u[0],u[1],1.1);
+}
+const N4=[[1,0],[-1,0],[0,1],[0,-1]];
+function bfs(){
+  const blk=new Uint8Array(wallBlock);
+  for(const f of fires){const[cx,cz]=cell(f.x,f.z);for(let dx=-2;dx<=2;dx++)for(let dz=-2;dz<=2;dz++){
+    if(dx*dx+dz*dz>5)continue;const x=cx+dx,z=cz+dz;if(x>=0&&z>=0&&x<GX&&z<GZ)blk[z*GX+x]=1}}
+  dist.fill(-1);const q=[];
+  for(const e of exits){e.blocked=fires.some(f=>Math.hypot(f.x-e.x,f.z-e.z)<e.r+.9)||hazards.some(h=>h.block&&Math.hypot(h.x-e.x,h.z-e.z)<e.r+h.block);
+    e.pad.material.color.setHex(e.blocked?0xff4d5e:0x3ddc97);if(e.blocked)continue;
+    for(let z=0;z<GZ;z++)for(let x=0;x<GX;x++)if(Math.hypot((x+.5)*C-e.x,(z+.5)*C-e.z)<e.r){const i=z*GX+x;if(dist[i]<0){dist[i]=0;q.push(i)}}}
+  for(let h=0;h<q.length;h++){const i=q[h],x=i%GX,z=(i/GX)|0;
+    for(const[dx,dz]of N4){const nx=x+dx,nz=z+dz;if(nx<0||nz<0||nx>=GX||nz>=GZ)continue;
+      const j=nz*GX+nx;if(dist[j]>=0||blk[j])continue;dist[j]=dist[i]+1;q.push(j)}}
+  dirty=false;
+}
+
+const pm=new T.MeshStandardMaterial({color:0x5bc0ff,roughness:.5}),hm=new T.MeshStandardMaterial({color:0xf2d3b8,roughness:.6});
+const bodyG=new T.CylinderGeometry(.17,.2,.55,10),headG=new T.SphereGeometry(.15,12,10);
+function spawn(p){
+  let x,z,n=0;
+  do{x=1+Math.random()*(SW-2);z=1+Math.random()*(SD-2);n++}while((wb(x,z)||(exits.length&&dist[cell(x,z)[1]*GX+cell(x,z)[0]]<2))&&n<400);
+  Object.assign(p,{x,z,state:'moving'});p.g.visible=true;p.g.rotation.set(0,0,0);p.b.material.color.setHex(0x5bc0ff);p.g.position.set(x,0,z);
+}
+const fireCols=[0xffd23a,0xff7a1a,0xff3d12],coneGs=[0,1,2].map(k=>new T.ConeGeometry(.28+k*.06,.9+k*.25,7));
+function ignite(x,z,h){
+  if(fires.length>=110)return null;
+  const g=new T.Group();
+  for(let k=0;k<3;k++){const m=new T.Mesh(coneGs[k],new T.MeshBasicMaterial({color:fireCols[k],transparent:true,opacity:.8,blending:T.AdditiveBlending,depthWrite:false}));
+    m.position.y=.45+k*.1;m.rotation.y=Math.random()*6;g.add(m)}
+  g.position.set(x,0,z);scene.add(g);
+  let light=null;if(fires.filter(f=>f.light).length<6){light=new T.PointLight(0xff7a2a,1.6,8);light.position.set(x,1.2,z);scene.add(light)}
+  const fo={x,z,g,light,ph:Math.random()*9,h};fires.push(fo);if(h)h.fl.push(fo);dirty=true;return fo;
+}
+const smG=new T.SphereGeometry(.5,8,6);
+for(let i=0;i<90;i++){const m=new T.Mesh(smG,new T.MeshBasicMaterial({color:0x1b1f27,transparent:true,opacity:0,depthWrite:false}));m.visible=false;scene.add(m);smoke.push({m,t:9,life:3,op:.38,y0:1,rise:2.2,sc:.6})}
+
+function segDist(px,pz,[x1,z1,x2,z2]){
+  const dx=x2-x1,dz=z2-z1,l2=dx*dx+dz*dz||1,t=clamp(((px-x1)*dx+(pz-z1)*dz)/l2,0,1);
+  return Math.hypot(px-(x1+t*dx),pz-(z1+t*dz));
+}
+function clearAll(){
+  for(const o of deco){scene.remove(o);o.geometry&&o.geometry.dispose();if(o.material)[].concat(o.material).forEach(mm=>{mm.map&&mm.map.dispose();mm.dispose()})}deco=[];labelObjs=[];
+  for(const w of walls){scene.remove(w.m);w.m.geometry.dispose();w.m.material.dispose()}walls=[];
+  for(const o of exitObjs)scene.remove(o);exitObjs=[];exits=[];
+  for(const f of fires){scene.remove(f.g);if(f.light)scene.remove(f.light)}fires=[];
+  for(const h of hazards)for(const o of h.objs){scene.remove(o);o.traverse(c=>{c.geometry&&c.geometry.dispose();if(c.material)[].concat(c.material).forEach(mm=>{mm.map&&mm.map.dispose();mm.dispose()})})}hazards=[];
+  for(const k of soot){scene.remove(k.m);k.m.material.dispose()}soot=[];brk=0;
+  for(const k of sparks){k.t=9;k.m.visible=false}
+  for(const s of smoke){s.t=9;s.m.visible=false}
+  for(const p of people)scene.remove(p.g);people=[];
+}
+
+let SPD=1,SZ=1;
+function addPeople(n,cx,cz){
+  for(let i=0;i<n&&people.length<400;i++){
+    const g=new T.Group(),b=new T.Mesh(bodyG,pm.clone()),h=new T.Mesh(headG,hm);
+    g.rotation.order='YXZ';
+    b.position.y=.3;h.position.y=.72;b.castShadow=h.castShadow=true;g.add(b,h);g.scale.setScalar(SZ);scene.add(g);
+    const p={g,b,x:0,z:0,vx:0,vz:0,stun:0,ph:Math.random()*9,state:'moving',aware:false,spd:1.8+Math.random()*.9};
+    if(cx===undefined){spawn(p);people.push(p);continue}
+    let x,z,k=0;const R=Math.sqrt(n)*.35+.4;
+    do{const a=Math.random()*6.283,d=Math.random()*R;x=cx+Math.cos(a)*d;z=cz+Math.sin(a)*d;k++}while((wb(x,z)||x<.3||z<.3||x>SW-.3||z>SD-.3)&&k<30);
+    if(k>=30){scene.remove(g);continue}
+    Object.assign(p,{x,z});g.position.set(x,0,z);people.push(p);
+  }
+}
+/* ---------- build the 3D world from the loaded plan ---------- */
+let r=40,th=Math.PI/2+.35,ph=.85,auto=true,ctr=new T.Vector3(15,0,9);
+function build(fit){
+  clearAll();if(!SEGS.length)return;
+  const H=+$('h').value;TH=+$('t').value;
+  floor.scale.set(SW,1,SD);floor.position.set(SW/2,-.1,SD/2);
+  ground.scale.set(ext*8,ext*8,1);ground.position.set(SW/2,-.2,SD/2);
+  scene.fog.near=ext*1.5;scene.fog.far=ext*5;
+  const sc=sun.shadow.camera,s=ext*.9;Object.assign(sc,{left:-s,right:s,top:s,bottom:-s,near:1,far:ext*6});sc.updateProjectionMatrix();
+  sun.position.set(SW/2-ext*.3,ext,SD/2+ext*.9);sun.target.position.set(SW/2,0,SD/2);
+  GX=Math.ceil(SW/C);GZ=Math.ceil(SD/C);wallBlock=new Uint8Array(GX*GZ);dist=new Int16Array(GX*GZ);
+  for(const s of SEGS)addWall(s,H);
+  const pal=[0x3b82f6,0x22c55e,0xa855f7,0xf59e0b,0xec4899,0x14b8a6,0xef4444,0x84cc16],pc={};
+  const colOf=l=>{const c=lcols[l];if(c!==undefined&&c!==0xffffff)return c;if(pc[l]===undefined)pc[l]=pal[Object.keys(pc).length%pal.length];return pc[l]};
+  const inside=(x,z,pts)=>{let c=false;for(let i=0,j=pts.length-1;i<pts.length;j=i++){const a=pts[i],b=pts[j];if((a[1]>z)!==(b[1]>z)&&x<(b[0]-a[0])*(z-a[1])/(b[1]-a[1])+a[0])c=!c}return c};
+  const gn=Math.min(Math.ceil(ext),200),grid=new T.GridHelper(gn,gn,0x3b4f6b,0x2d3f58);
+  grid.scale.setScalar(ext/gn);grid.position.set(SW/2,.012,SD/2);scene.add(grid);deco.push(grid);
+  const rooms=[];
+  for(const sh of SHAPES){
+    const isDoor=/door|exit/i.test(sh.layer),isRoom=/room|floor|zone|area|store|shop/i.test(sh.layer);
+    if(!isDoor&&!isRoom)continue;
+    const col=colOf(sh.layer),vis=$('showC').checked;
+    const g=new T.ShapeGeometry(new T.Shape(sh.pts.map(q=>new T.Vector2(q[0],q[1]))));g.rotateX(Math.PI/2);
+    const m=new T.Mesh(g,new T.MeshStandardMaterial({color:col,emissive:col,emissiveIntensity:isDoor?.7:.3,roughness:.8,transparent:true,opacity:isDoor?.95:.88,side:T.DoubleSide}));
+    m.position.y=isDoor?.07:.03;m.receiveShadow=true;m.visible=vis;scene.add(m);deco.push(m);
+    const ln=new T.LineLoop(new T.BufferGeometry().setFromPoints(sh.pts.map(q=>new T.Vector3(q[0],isDoor?.08:.05,q[1]))),new T.LineBasicMaterial({color:new T.Color(col).lerp(new T.Color(0xffffff),.5)}));
+    ln.visible=vis;scene.add(ln);deco.push(ln);
+    if(isRoom)rooms.push({pts:sh.pts,col});
+  }
+  for(const t of TEXTS){
+    const rm=rooms.find(r=>inside(t.x,t.z,r.pts)),hex='#'+(rm?rm.col:0x8b98ab).toString(16).padStart(6,'0');
+    const fs=60,F='700 '+fs+'px Bricolage Grotesque,sans-serif',c=document.createElement('canvas'),g=c.getContext('2d');
+    g.font=F;const w=Math.ceil(g.measureText(t.text).width)+104;c.width=w;c.height=96;
+    const rr=(x,y,ww,hh,r)=>{g.beginPath();g.moveTo(x+r,y);g.arcTo(x+ww,y,x+ww,y+hh,r);g.arcTo(x+ww,y+hh,x,y+hh,r);g.arcTo(x,y+hh,x,y,r);g.arcTo(x,y,x+ww,y,r);g.closePath()};
+    rr(4,10,w-8,76,38);g.fillStyle='rgba(12,18,27,.88)';g.fill();g.lineWidth=5;g.strokeStyle=hex;g.stroke();
+    g.fillStyle=hex;g.beginPath();g.arc(46,48,14,0,6.283);g.fill();
+    g.font=F;g.textAlign='left';g.textBaseline='middle';g.fillStyle='#ffffff';g.fillText(t.text,76,52);
+    const sp=new T.Sprite(new T.SpriteMaterial({map:new T.CanvasTexture(c),depthTest:false,fog:false}));
+    const hh=Math.max(.5,Math.min(t.h*.55,1.1));sp.scale.set(hh*w/96,hh,1);sp.position.set(t.x,H+.5,t.z);sp.renderOrder=5;sp.visible=$('showL').checked;
+    scene.add(sp);deco.push(sp);labelObjs.push(sp);
+  }
+  rebuildWalls();detectExits();bfs();
+  addPeople(clamp(Math.round(SW*SD/14),10,120));
+  dirty=true;
+  if(fit){ctr.set(SW/2,0,SD/2);r=ext*(innerWidth<innerHeight?2.3:1.6);auto=true}
+}
+function resize(){ren.setSize(innerWidth,innerHeight);cam.aspect=innerWidth/innerHeight;cam.updateProjectionMatrix()}
+addEventListener('resize',resize);resize();
+const setCam=()=>{cam.position.set(ctr.x+r*Math.sin(ph)*Math.cos(th),r*Math.cos(ph),ctr.z+r*Math.sin(ph)*Math.sin(th));cam.lookAt(ctr)};
+const zoom=v=>clamp(v,ext*.35,ext*4);
+
+/* ---------- input ---------- */
+const el=ren.domElement,ptrs=new Map(),ray=new T.Raycaster();let moved=0,pd=0;
+function pick(e){
+  ray.setFromCamera(new T.Vector2(e.clientX/innerWidth*2-1,-(e.clientY/innerHeight)*2+1),cam);
+  const h=ray.intersectObject(floor)[0];if(!h)return;
+  if(exitMode){userEx.push([h.point.x,h.point.z]);addExit(h.point.x,h.point.z,1.1);bfs();setExit(false);return}
+  if(crowdMode){addPeople(clamp(Math.round(+$('pn').value)||1,1,200),h.point.x,h.point.z);return}
+  startEmergency(curType,h.point.x,h.point.z);
+}
+el.addEventListener('pointerdown',e=>{el.setPointerCapture(e.pointerId);ptrs.set(e.pointerId,{x:e.clientX,y:e.clientY});moved=0;auto=false;
+  if(ptrs.size==2){const[a,b]=[...ptrs.values()];pd=Math.hypot(a.x-b.x,a.y-b.y)}});
+el.addEventListener('pointermove',e=>{const p=ptrs.get(e.pointerId);if(!p)return;
+  const dx=e.clientX-p.x,dy=e.clientY-p.y;p.x=e.clientX;p.y=e.clientY;moved+=Math.abs(dx)+Math.abs(dy);
+  if(ptrs.size==1){th-=dx*.006;ph=clamp(ph-dy*.005,.2,1.45)}
+  else if(ptrs.size==2){const[a,b]=[...ptrs.values()],nd=Math.hypot(a.x-b.x,a.y-b.y);r=zoom(r*pd/nd);pd=nd}});
+el.addEventListener('pointerup',e=>{if(ptrs.size==1&&moved<8)pick(e);ptrs.delete(e.pointerId)});
+el.addEventListener('pointercancel',e=>ptrs.delete(e.pointerId));
+el.addEventListener('wheel',e=>{e.preventDefault();r=zoom(r*(1+e.deltaY*.001));auto=false},{passive:false});
+let crowdMode=false;
+function setExit(v){exitMode=v;if(v&&crowdMode)setCrowd(false);$('bExit').className=v?'on':'ghost';$('bExit').textContent=v?'Tap the floor to place exit':'Add exit'}
+function setCrowd(v){crowdMode=v;if(v&&exitMode)setExit(false);$('bCrowd').className=v?'on':'ghost';$('bCrowd').textContent=v?'Click the map to add crowd':'Place crowd'}
+$('bCrowd').onclick=()=>setCrowd(!crowdMode);
+$('pa').oninput=()=>{$('pav').textContent=(+$('pa').value).toFixed(2)};
+$('bExit').onclick=()=>setExit(!exitMode);
+document.querySelectorAll('#types .type').forEach(b=>b.onclick=()=>{curType=b.dataset.t;document.querySelectorAll('#types .type').forEach(x=>x.classList.toggle('sel',x===b));$('tdesc').textContent=TYPES[curType].desc});
+$('rStart').onclick=()=>startEmergency(curType);
+$('shout').oninput=()=>{$('shv').textContent=(+$('shout').value).toFixed(1)};
+$('rAlarm').onclick=()=>{for(const p of people)if(p.state==='moving'&&!p.aware){const t=clock+1+Math.random()*3;if(p.trig===undefined||t<p.trig)p.trig=t}};
+$('bReset').onclick=()=>SEGS.length&&build(false);
+$('sz').oninput=()=>{SZ=+$('sz').value;$('szv').textContent=SZ.toFixed(1);people.forEach(p=>p.g.scale.setScalar(SZ))};
+$('spd').oninput=()=>{SPD=+$('spd').value;$('spv').textContent=SPD.toFixed(1)};
+$('bAdd').onclick=()=>{if(!SEGS.length)return;addPeople(clamp(Math.round(+$('pn').value)||0,1,200));dirty=true};
+
+/* ---------- emergencies, awareness and soot ---------- */
+const TYPES={
+  fire:{name:'FIRE',desc:'10 to 15 flames start in one spot and then spread. They leave black soot on nearby walls but do not make walls fall.'},
+  hazard:{name:'FIRE HAZARD',desc:'A gas leak with thick smoke. Nothing is burning yet, but people who walk through it slow down.'},
+  struct:{name:'STRUCTURAL DAMAGE',desc:'Part of a wall breaks. Debris covers the broken spot and blocks it. Anyone standing there is hurt.'},
+  equip:{name:'EQUIPMENT FAILURE',desc:'A machine sparks and fails. The small area around it is blocked.'}
+};
+$('tdesc').textContent=TYPES.fire.desc;
+const flash=m=>{flashMsg=m;flashT=3.5};
+function los(x1,z1,x2,z2,ign){
+  const d=Math.hypot(x2-x1,z2-z1),n=Math.ceil(d/.3);
+  for(let i=1;i<n;i++){const t=i/n,x=x1+(x2-x1)*t,z=z1+(z2-z1)*t;if(ign&&Math.hypot(x-x2,z-z2)<ign)continue;if(wb(x,z))return false}
+  return true;
+}
+const exC=document.createElement('canvas');exC.width=exC.height=64;
+{const g=exC.getContext('2d');g.fillStyle='#ff4d5e';g.beginPath();g.arc(32,32,28,0,6.283);g.fill();g.fillStyle='#fff';g.font='800 44px sans-serif';g.textAlign='center';g.textBaseline='middle';g.fillText('!',32,35)}
+const exMat=new T.SpriteMaterial({map:new T.CanvasTexture(exC),depthTest:false});
+function setAware(p){
+  p.aware=true;p.b.material.color.setHex(0xffb020);
+  const e=new T.Sprite(exMat);e.scale.set(.5,.5,1);e.position.set(0,1.25,0);e.renderOrder=6;p.g.add(e);p.exs=e;p.exT=2.2;
+}
+function dropMark(p){if(p.exs){p.g.remove(p.exs);p.exs=null}}
+function pill(text){
+  const F='800 54px Bricolage Grotesque,sans-serif',c=document.createElement('canvas'),g=c.getContext('2d');
+  g.font=F;const w=Math.ceil(g.measureText(text).width)+60;c.width=w;c.height=84;
+  g.beginPath();g.moveTo(40,4);g.arcTo(w-4,4,w-4,80,38);g.arcTo(w-4,80,4,80,38);g.arcTo(4,80,4,4,38);g.arcTo(4,4,w-4,4,38);g.closePath();
+  g.fillStyle='#e0262f';g.fill();g.font=F;g.textAlign='center';g.textBaseline='middle';g.fillStyle='#fff';g.fillText(text,w/2,45);
+  const sp=new T.Sprite(new T.SpriteMaterial({map:new T.CanvasTexture(c),depthTest:false,fog:false}));sp.scale.set(.9*w/84,.9,1);sp.renderOrder=7;return sp;
+}
+const setZone=(h,r)=>{h.r=r;h.zone.scale.set(r,1,r)};
+function makeZone(h){
+  const grp=new T.Group();
+  const disc=new T.Mesh(new T.CircleGeometry(1,64),new T.MeshBasicMaterial({color:0xff2d2d,transparent:true,opacity:.22,depthWrite:false,side:T.DoubleSide}));
+  const ring=new T.Mesh(new T.RingGeometry(.95,1,96),new T.MeshBasicMaterial({color:0xff4d4d,transparent:true,opacity:.9,depthWrite:false,side:T.DoubleSide}));
+  disc.rotation.x=ring.rotation.x=-Math.PI/2;disc.position.y=.09;ring.position.y=.1;
+  grp.add(disc,ring);grp.position.set(h.x,0,h.z);scene.add(grp);
+  const lab=pill(TYPES[h.type].name);lab.position.set(h.x,(+$('h').value)+1.1,h.z);scene.add(lab);
+  h.zone=grp;h.ring=ring;h.objs.push(grp,lab);setZone(h,h.r);
+}
+function nudge(h,kill){
+  for(const p of people){
+    if(p.state!=='moving')continue;const d=Math.hypot(p.x-h.x,p.z-h.z);if(d>=h.block+.25)continue;
+    if(kill){p.state='dead';p.b.material.color.setHex(0x3a1414);p.g.rotation.z=Math.PI/2;p.g.position.y=.2;dropMark(p);continue}
+    const a=d>.01?Math.atan2(p.z-h.z,p.x-h.x):Math.random()*6.283,r=h.block+.4;
+    p.x=clamp(h.x+Math.cos(a)*r,.3,SW-.3);p.z=clamp(h.z+Math.sin(a)*r,.3,SD-.3);p.g.position.set(p.x,0,p.z);
+  }
+}
+function initFire(h){
+  const n=10+Math.floor(Math.random()*6);let t=0;
+  while(h.fl.length<n&&t<400){t++;
+    const a=Math.random()*6.283,d=Math.sqrt(Math.random())*1.7,fx=h.x+Math.cos(a)*d,fz=h.z+Math.sin(a)*d;
+    if(fx<.4||fz<.4||fx>SW-.4||fz>SD-.4||wb(fx,fz)||!los(h.x,h.z,fx,fz))continue;
+    if(h.fl.some(f=>Math.hypot(f.x-fx,f.z-fz)<.38))continue;
+    ignite(fx,fz,h)}
+  if(!h.fl.length)ignite(h.x,h.z,h);
+}
+function initHazard(h){
+  h.r=3.6;const c=new T.Mesh(new T.CylinderGeometry(.2,.2,.8,12),new T.MeshStandardMaterial({color:0xd23c2a,roughness:.5,emissive:0x601008}));
+  c.position.set(h.x,.4,h.z);c.castShadow=true;scene.add(c);h.objs.push(c);
+}
+function initEquip(h){
+  h.r=2.6;h.block=.8;
+  const b=new T.Mesh(new T.BoxGeometry(.7,.8,.55),new T.MeshStandardMaterial({color:0x353b48,roughness:.6,emissive:0xffb300,emissiveIntensity:.4}));
+  b.position.set(h.x,.4,h.z);b.castShadow=true;scene.add(b);
+  const l=new T.PointLight(0xaee0ff,2,6);l.position.set(h.x,1.1,h.z);scene.add(l);
+  h.body=b;h.light=l;h.objs.push(b,l);rebuildWalls();nudge(h,false);
+}
+function startEmergency(type,x,z){
+  if(!SEGS.length)return;
+  if(type==='struct')return startStruct(x,z);
+  if(x===undefined){let n=0;do{x=1+Math.random()*(SW-2);z=1+Math.random()*(SD-2);n++}while(wb(x,z)&&n<300)}
+  else if(wb(x,z)){flash('Tap open floor, not a wall.');return}
+  const h={type,x,z,r:3.2,block:0,objs:[],fl:[],t0:clock};hazards.push(h);
+  if(type==='fire')initFire(h);else if(type==='hazard')initHazard(h);else initEquip(h);
+  makeZone(h);dirty=true;
+}
+function startStruct(x,z){
+  const cand=walls.filter(w=>w.L>=1.6);if(!cand.length){flash('No wall is long enough to break.');return}
+  let w,t;
+  if(x===undefined){w=cand[(Math.random()*cand.length)|0];t=.25+Math.random()*.5}
+  else{let bd=1e9;for(const c of cand){const d=segDist(x,z,c.s);if(d<bd){bd=d;w=c}}
+    if(bd>3){flash('Tap closer to a wall to break it.');return}
+    const[a1,b1,a2,b2]=w.s,ux=(a2-a1)/w.L,uz=(b2-b1)/w.L;t=clamp(((x-a1)*ux+(z-b1)*uz)/w.L,.12,.88)}
+  const[x1,z1,x2,z2]=w.s,L=w.L,ux=(x2-x1)/L,uz=(z2-z1)/L,g=1.2,c=t*L,px=x1+ux*c,pz=z1+uz*c,H=w.H;
+  walls.splice(walls.indexOf(w),1);scene.remove(w.m);w.m.geometry.dispose();w.m.material.dispose();
+  const part=(a,b)=>{if(b-a>.25)addWall([x1+ux*a,z1+uz*a,x1+ux*b,z1+uz*b],H)};
+  part(0,Math.max(0,c-g));part(Math.min(L,c+g),L);
+  const h={type:'struct',x:px,z:pz,r:3,block:g,objs:[],fl:[],t0:clock};hazards.push(h);brk++;
+  const cols=[0x8a8f98,0x6b6f78,0xb8bcc4,0x7a6f66];
+  for(let i=0;i<16;i++){
+    const sz=.15+Math.random()*.4,m=new T.Mesh(new T.BoxGeometry(sz*(.8+Math.random()),sz,sz*(.8+Math.random())),new T.MeshStandardMaterial({color:cols[i%4],roughness:.9}));
+    const aa=Math.random()*6.283,dd=Math.sqrt(Math.random())*g;
+    m.position.set(px+Math.cos(aa)*dd,sz/2,pz+Math.sin(aa)*dd);m.rotation.set(Math.random()*.6,Math.random()*6,Math.random()*.6);m.castShadow=true;scene.add(m);h.objs.push(m)}
+  makeZone(h);puff(px,pz,10);rebuildWalls();nudge(h,true);dirty=true;
+}
+function addWall(s,H){
+  const dx=s[2]-s[0],dz=s[3]-s[1],L=Math.hypot(dx,dz);
+  const m=new T.Mesh(new T.BoxGeometry(L+TH,H,TH),new T.MeshStandardMaterial({color:0xd5dbe5,roughness:.75}));
+  m.position.set((s[0]+s[2])/2,H/2,(s[1]+s[3])/2);m.rotation.y=-Math.atan2(dz,dx);m.castShadow=m.receiveShadow=true;scene.add(m);
+  walls.push({m,s,L,H});
+}
+function puff(x,z,n){
+  for(let i=0;i<n;i++){const s=smoke.find(s=>s.t>=s.life);if(!s)return;
+    s.t=0;s.life=1.6+Math.random()*1.2;s.op=.45;s.y0=.3;s.rise=1.6;s.sc=.8;s.m.material.color.setHex(0xb9b2a6);s.m.visible=true;
+    s.m.position.set(x+(Math.random()-.5)*1.6,.3,z+(Math.random()-.5)*1.6)}
+}
+const sparks=[],spG=new T.BoxGeometry(.05,.05,.05);
+for(let i=0;i<40;i++){const m=new T.Mesh(spG,new T.MeshBasicMaterial({color:0xffd24a}));m.visible=false;scene.add(m);sparks.push({m,t:9,vx:0,vy:0,vz:0})}
+function spark(x,z){
+  const s=sparks.find(s=>s.t>=.6);if(!s)return;
+  s.t=0;s.m.visible=true;s.m.position.set(x,.8,z);const a=Math.random()*6.283,v=1+Math.random()*2;
+  s.vx=Math.cos(a)*v;s.vz=Math.sin(a)*v;s.vy=1.5+Math.random()*2;
+}
+const sootC=document.createElement('canvas');sootC.width=sootC.height=128;
+{const g=sootC.getContext('2d');for(let i=0;i<7;i++){const x=40+Math.random()*48,y=40+Math.random()*48,r=22+Math.random()*30,gr=g.createRadialGradient(x,y,0,x,y,r);gr.addColorStop(0,'rgba(0,0,0,.85)');gr.addColorStop(1,'rgba(0,0,0,0)');g.fillStyle=gr;g.fillRect(0,0,128,128)}}
+const sootTex=new T.CanvasTexture(sootC),sootG=new T.PlaneGeometry(1,1);
+function addSoot(){
+  const f=fires[(Math.random()*fires.length)|0];let best=null,bd=1.6;
+  for(const w of walls){const d=segDist(f.x,f.z,w.s);if(d<bd){bd=d;best=w}}
+  if(!best||soot.length>=260)return;
+  const[x1,z1,x2,z2]=best.s,L=best.L,ux=(x2-x1)/L,uz=(z2-z1)/L;
+  const t=clamp((f.x-x1)*ux+(f.z-z1)*uz+(Math.random()-.5)*1.2,0,L),px=x1+ux*t,pz=z1+uz*t,nx=-uz,nz=ux,side=((f.x-px)*nx+(f.z-pz)*nz)>=0?1:-1;
+  let near=0;for(const k of soot)if(k.w===best&&k.side===side&&Math.abs(k.t-t)<.5)near++;
+  if(near>=3)return;
+  const sz=1+Math.random()*.9,hg=Math.min(best.H*.95,.9+Math.random()*1.6);
+  const m=new T.Mesh(sootG,new T.MeshBasicMaterial({map:sootTex,transparent:true,opacity:0,depthWrite:false,side:T.DoubleSide,polygonOffset:true,polygonOffsetFactor:-2}));
+  m.scale.set(sz,hg,1);m.position.set(px+nx*side*(TH/2+.015),hg*.45,pz+nz*side*(TH/2+.015));
+  m.rotation.y=best.m.rotation.y+(side<0?Math.PI:0);scene.add(m);
+  soot.push({m,w:best,side,t,o:0,max:.5+Math.random()*.25});
+}
+function updateAwareness(){
+  const SH=+$('shout').value;
+  for(const p of people){
+    if(p.state!=='moving'||p.aware||p.trig!==undefined)continue;
+    for(const h of hazards){if(Math.hypot(p.x-h.x,p.z-h.z)<h.r&&los(p.x,p.z,h.x,h.z,h.block+.4)){p.trig=clock+.4+Math.random()*1.1;break}}
+    if(p.trig!==undefined)continue;
+    for(const q of people){if(!q.aware||q.state!=='moving')continue;
+      if(Math.hypot(p.x-q.x,p.z-q.z)<SH&&los(p.x,p.z,q.x,q.z)){p.trig=clock+.6+Math.random()*1.6;break}}
+  }
+}
+
+/* ---------- simulation loop ---------- */
+let last=performance.now(),bfsT=0,sp=0,sm=0;
+function tick(now){
+  requestAnimationFrame(tick);
+  const dt=Math.min(.05,(now-last)/1000);last=now;clock+=dt;
+  if(auto)th+=dt*.06;setCam();
+  for(const f of fires){
+    const s=Math.sin(clock*9+f.ph);
+    f.g.children.forEach((m,k)=>m.scale.set(1+.15*s,1+.3*Math.sin(clock*7+f.ph+k),1+.15*s));
+    if(f.light)f.light.intensity=1.5+.5*s;
+  }
+  sp+=dt;
+  if(fires.length&&sp>1.6){sp=0;const f=fires[(Math.random()*fires.length)|0],a=Math.random()*6.28,d=1.2+Math.random()*.8,
+    nx=f.x+Math.cos(a)*d,nz=f.z+Math.sin(a)*d;
+    if(nx>.4&&nx<SW-.4&&nz>.4&&nz<SD-.4&&!wb(nx,nz)&&!wb((nx+f.x)/2,(nz+f.z)/2))ignite(nx,nz,f.h)}
+  sm+=dt;
+  const gas=hazards.some(h=>h.type==='hazard'),srcOn=fires.length||gas||hazards.some(h=>h.type==='equip');
+  if(srcOn&&sm>(gas?.07:.12)){sm=0;const s=smoke.find(s=>s.t>=s.life);
+    if(s){const srcs=fires.concat(hazards.filter(h=>h.type==='hazard'||h.type==='equip')),f=srcs[(Math.random()*srcs.length)|0];
+      s.t=0;s.m.visible=true;
+      if(f.type==='hazard'){const a=Math.random()*6.283,d=Math.sqrt(Math.random())*f.r*.5;s.life=3+Math.random()*1.5;s.op=.5;s.y0=.5;s.rise=1.6;s.sc=1;s.m.material.color.setHex(0x8e9199);s.m.position.set(f.x+Math.cos(a)*d,.5,f.z+Math.sin(a)*d)}
+      else if(f.type==='equip'){s.life=1.8+Math.random();s.op=.3;s.y0=.9;s.rise=1.5;s.sc=.35;s.m.material.color.setHex(0x2b2d33);s.m.position.set(f.x+(Math.random()-.5)*.3,.9,f.z+(Math.random()-.5)*.3)}
+      else{s.life=2.5+Math.random()*1.5;s.op=.38;s.y0=1;s.rise=2.2;s.sc=.6;s.m.material.color.setHex(0x1b1f27);s.m.position.set(f.x+(Math.random()-.5)*.5,1,f.z+(Math.random()-.5)*.5)}}}
+  for(const s of smoke){if(s.t>=s.life)continue;s.t+=dt;const k=s.t/s.life;
+    s.m.position.y=s.y0+k*s.rise;s.m.scale.setScalar(s.sc+k*1.6);s.m.material.opacity=s.op*(1-k);if(k>=1)s.m.visible=false}
+  for(const s of sparks){if(s.t>=.6)continue;s.t+=dt;s.vy-=9*dt;const q=s.m.position;q.x+=s.vx*dt;q.y+=s.vy*dt;q.z+=s.vz*dt;if(q.y<.02){q.y=.02;s.vy*=-.3}if(s.t>=.6)s.m.visible=false}
+  for(const h of hazards){
+    h.ring.material.opacity=.55+.4*Math.sin(clock*4+h.x);
+    if(h.type==='fire'&&h.fl.length&&Math.floor(clock*2)!==h.rz){h.rz=Math.floor(clock*2);let m=0;for(const f of h.fl)m=Math.max(m,Math.hypot(f.x-h.x,f.z-h.z));setZone(h,clamp(m+2,3.2,12))}
+    if(h.type==='equip'){h.body.material.emissiveIntensity=Math.random()<.5?.9:.1;h.light.intensity=Math.random()<.4?3:.2;if(Math.random()<dt*30)spark(h.x,h.z)}
+  }
+  if(flashT>0)flashT-=dt;
+  sootT+=dt;if(fires.length&&sootT>.35){sootT=0;addSoot()}
+  for(const k of soot)if(k.o<k.max){k.o=Math.min(k.max,k.o+dt*.4);k.m.material.opacity=k.o}
+  awT+=dt;if(awT>.2){awT=0;updateAwareness()}
+  bfsT+=dt;if(dirty||bfsT>.4){bfsT=0;if(walls.length)bfs()}
+
+  let safe=0,dead=0,moving=0,aw=0,nCalm=0;const act=[];
+  for(const p of people){
+    if(p.state==='safe'){safe++;continue}
+    if(p.state==='dead'){dead++;continue}
+    if(fires.some(f=>Math.hypot(f.x-p.x,f.z-p.z)<.9)){p.state='dead';p.b.material.color.setHex(0x3a1414);p.g.rotation.z=Math.PI/2;p.g.position.y=.2;dropMark(p);dead++;continue}
+    if(p.exT>0){p.exT-=dt;if(p.exT<=0)dropMark(p)}
+    if(!p.aware&&p.trig!==undefined&&clock>=p.trig)setAware(p);
+    if(!p.aware){p.wa=(p.wa===undefined?Math.random()*6.283:p.wa)+(Math.random()-.5)*dt*3;p.wx=Math.cos(p.wa);p.wz=Math.sin(p.wa);act.push(p);nCalm++;continue}
+    const ex=exits.filter(e=>!e.blocked).sort((a,b)=>Math.hypot(a.x-p.x,a.z-p.z)-Math.hypot(b.x-p.x,b.z-p.z))[0];
+    if(ex&&Math.hypot(ex.x-p.x,ex.z-p.z)<.8){p.state='safe';p.g.visible=false;safe++;continue}
+    moving++;aw++;
+    const[cx,cz]=cell(p.x,p.z),own=dist[cz*GX+cx];let tx=null,tz=null,bd=own<0?1e9:own;
+    if(own===0&&ex){tx=ex.x;tz=ex.z}
+    else for(let dx=-1;dx<=1;dx++)for(let dz=-1;dz<=1;dz++){
+      if(!dx&&!dz)continue;const nx=cx+dx,nz=cz+dz;if(nx<0||nz<0||nx>=GX||nz>=GZ)continue;
+      const dd=dist[nz*GX+nx];if(dd<0||dd>=bd)continue;
+      if(dx&&dz&&(dist[cz*GX+nx]<0||dist[nz*GX+cx]<0))continue;
+      bd=dd;tx=(nx+.5)*C;tz=(nz+.5)*C}
+    let wx=0,wz=0;
+    if(tx!==null){const dx=tx-p.x,dz=tz-p.z,l=Math.hypot(dx,dz)||1;wx=dx/l;wz=dz/l}
+    else{p.wa=(p.wa||0)+(Math.random()-.5)*dt*8;wx=Math.cos(p.wa);wz=Math.sin(p.wa)}
+    const PA=+$('pa').value,ja=Math.sin(clock*(3+p.ph%3)+p.ph)*.5*PA+(Math.random()-.5)*.5*PA,cj=Math.cos(ja),sj=Math.sin(ja);
+    p.wx=wx*cj-wz*sj;p.wz=wx*sj+wz*cj;act.push(p);
+  }
+  const PA=+$('pa').value,sp0=1+PA*.7,R=.4*SZ;
+  for(const p of act){
+    let fx=0,fz=0,near=0;const cm=!p.aware;
+    for(const q of act){if(q===p)continue;const dx=p.x-q.x,dz=p.z-q.z,d2=dx*dx+dz*dz;
+      if(d2<4*R*R){if(d2<1e-6){fx+=Math.random()-.5;fz+=Math.random()-.5;near++;continue}
+        const d=Math.sqrt(d2),ov=1-d/(2*R);fx+=dx/d*ov;fz+=dz/d*ov;near++}}
+    if(!cm&&p.stun<=0&&near>=3&&Math.random()<dt*.3*PA)p.stun=.8;
+    const slow=p.stun>0?.1:1-Math.min(.55,near*.1);if(p.stun>0)p.stun-=dt;
+    let gs=1;for(const h of hazards)if(h.type==='hazard'&&Math.hypot(p.x-h.x,p.z-h.z)<h.r){gs=.55;break}
+    const k=p.spd*SPD*(cm?.3:sp0)*slow*gs,push=cm?3:7*(.5+PA),a=Math.min(1,dt*7);
+    p.vx+=(p.wx*k+fx*push-p.vx)*a;p.vz+=(p.wz*k+fz*push-p.vz)*a;
+    const nx=p.x+p.vx*dt,nz=p.z+p.vz*dt;
+    if(!wb(nx,p.z))p.x=clamp(nx,.2,SW-.2);else{p.vx*=-.2;if(cm)p.wa+=1.6+Math.random()*2}
+    if(!wb(p.x,nz))p.z=clamp(nz,.2,SD-.2);else{p.vz*=-.2;if(cm)p.wa+=1.6+Math.random()*2}
+    const v=Math.hypot(p.vx,p.vz);
+    p.g.position.set(p.x,Math.abs(Math.sin(clock*(8+v*2)+p.ph))*.07*Math.min(1,v),p.z);
+    if(v>.15)p.g.rotation.y=Math.atan2(p.vx,p.vz);
+    p.g.rotation.x=p.stun>0?1.2:Math.min(.4,v*(cm?.04:.1));
+  }
+  const open=exits.filter(e=>!e.blocked).length;
+  $('sSafe').textContent=safe;$('sDead').textContent=dead;$('sExit').textContent=open;
+  $('sWall').textContent=brk;$('sFire').textContent=fires.length;$('rAw').textContent=aw;$('rCalm').textContent=nCalm;
+  const sig=hazards.map(h=>h.type+(h.type==='fire'?h.fl.length:'')).join('|');
+  if(sig!==lastSig){lastSig=sig;$('rList').innerHTML=hazards.length?hazards.map(h=>'<div>'+TYPES[h.type].name+(h.type==='fire'?' · '+h.fl.length+' flames':'')+'</div>').join(''):'None yet'}
+  $('status').textContent=flashT>0?flashMsg:!SEGS.length?'':!exits.length?'No exits found in the outer walls. Press Add exit and tap the floor.':
+    !hazards.length?'Choose an emergency on the right, then press Start or tap the floor.':
+    moving?(nCalm?nCalm+' people have not noticed yet.':'Everyone is aware and evacuating.'):
+    nCalm?nCalm+' people are still unaware.':'Simulation complete: '+safe+' of '+people.length+' evacuated.';
+  ren.render(scene,cam);
+}
+$('sample').click();requestAnimationFrame(tick);
+</script>
+</body>
+</html>
